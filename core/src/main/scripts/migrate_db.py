@@ -6,20 +6,20 @@ import sys
 import contextlib
 import argparse
 from collections import OrderedDict
+import dsnparse
+
 import MySQLdb
 from pathlib import Path
 
 # globals
 ERROR_FILE = sys.stderr
 OUTPUT_FILE = sys.stdout
-DATABASE_HOST = 'db.host'
-DATABASE_NAME = 'db.portal_db_name'
 DATABASE_USER = 'db.user'
 DATABASE_PW = 'db.password'
-DATABASE_USE_SSL = 'db.use_ssl'
+DATABASE_URL = 'db.connection_string'
 VERSION_TABLE = 'info'
 VERSION_FIELD = 'DB_SCHEMA_VERSION'
-REQUIRED_PROPERTIES = [DATABASE_HOST, DATABASE_NAME, DATABASE_USER, DATABASE_PW, DATABASE_USE_SSL]
+REQUIRED_PROPERTIES = [DATABASE_USER, DATABASE_PW, DATABASE_URL]
 ALLOWABLE_GENOME_REFERENCES = ['37', 'hg19', 'GRCh37', '38', 'hg38', 'GRCh38', 'mm10', 'GRCm38']
 DEFAULT_GENOME_REFERENCE = 'hg19'
 MULTI_REFERENCE_GENOME_SUPPORT_MIGRATION_STEP = (2, 11, 0)
@@ -30,86 +30,63 @@ FUSIONS_VERBOTEN_STEP = (2, 12, 14)
 class PortalProperties(object):
     """ Properties object class, just has fields for db conn """
 
-    def __init__(self, database_host, database_name, database_user, database_pw, database_use_ssl):
-        # default port:
-        self.database_port = 3306
-        # if there is a port added to the host name, split and use this one:
-        if ':' in database_host:
-            host_and_port = database_host.split(':')
-            self.database_host = host_and_port[0]
-            if self.database_host.strip() == 'localhost':
-                print(
-                    "Invalid host config '" + database_host + "' in properties file. If you want to specify a port on local host use '127.0.0.1' instead of 'localhost'",
-                    file=ERROR_FILE)
-                sys.exit(1)
-            self.database_port = int(host_and_port[1])
-        else:
-            self.database_host = database_host
-        self.database_name = database_name
+    def __init__(self, database_user, database_pw, database_url):
         self.database_user = database_user
         self.database_pw = database_pw
-        self.database_use_ssl = database_use_ssl
+        self.database_url = database_url
 
 def get_db_cursor(portal_properties):
     """ Establishes a MySQL connection """
     try:
-        connection_kwargs = {}
-        connection_kwargs['host'] = portal_properties.database_host
-        connection_kwargs['port'] = portal_properties.database_port
-        connection_kwargs['user'] = portal_properties.database_user
-        connection_kwargs['passwd'] = portal_properties.database_pw
-        connection_kwargs['db'] = portal_properties.database_name
-        if portal_properties.database_use_ssl == 'true':
-            connection_kwargs['ssl'] = {"ssl_mode": True}
-        
+        url_elements = dsnparse.parse(portal_properties.database_url)
+        connection_kwargs = {
+            "host": url_elements.host,
+            "port": url_elements.port if url_elements.port is not None else 3306,
+            "db": url_elements.paths[0],
+            "user": portal_properties.database_user,
+            "passwd": portal_properties.database_pw,
+            "ssl": "useSSL" not in url_elements.query or url_elements.query["useSSL"] == "true"
+        }
         connection = MySQLdb.connect(**connection_kwargs)
     except MySQLdb.Error as exception:
         print(exception, file=ERROR_FILE)
-        port_info = ''
-        if portal_properties.database_host.strip() != 'localhost':
-            # only add port info if host is != localhost (since with localhost apparently sockets are used and not the given port) TODO - perhaps this applies for all names vs ips?
-            port_info = " on port " + str(portal_properties.database_port)
         message = (
-            "--> Error connecting to server "
-            + portal_properties.database_host
-            + port_info)
+            "--> Error connecting to server with URL"
+            + portal_properties.database_url)
         print(message, file=ERROR_FILE)
         raise ConnectionError(message) from exception
     if connection is not None:
         return connection, connection.cursor()
 
-def get_portal_properties(properties_filename):
-    """ Returns a properties object """
-    properties = {}
-    with open(properties_filename, 'r') as properties_file:
-        for line in properties_file:
-            line = line.strip()
-            # skip line if its blank or a comment
-            if len(line) == 0 or line.startswith('#'):
-                continue
-            try:
-                name, value = line.split('=', maxsplit=1)
-            except ValueError:
-                print(
-                    'Skipping invalid entry in property file: %s' % (line),
-                    file=ERROR_FILE)
-                continue
-            properties[name] = value.strip()
-    missing_properties = []
-    for required_property in REQUIRED_PROPERTIES:
-        if required_property not in properties or len(properties[required_property]) == 0:
-            missing_properties.append(required_property)
-    if missing_properties:
-        print(
-            'Missing required properties : (%s)' % (', '.join(missing_properties)),
-            file=ERROR_FILE)
-        return None
-    # return an instance of PortalProperties
-    return PortalProperties(properties[DATABASE_HOST],
-                            properties[DATABASE_NAME],
-                            properties[DATABASE_USER],
-                            properties[DATABASE_PW],
-                            properties[DATABASE_USE_SSL])
+def get_portal_properties(properties_filename) -> PortalProperties:
+        properties = {}
+        with open(properties_filename, 'r') as properties_file:
+            for line in properties_file:
+                line = line.strip()
+                # skip line if its blank or a comment
+                if len(line) == 0 or line.startswith('#'):
+                    continue
+                try:
+                    name, value = line.split('=', maxsplit=1)
+                except ValueError:
+                    print(
+                        'Skipping invalid entry in property file: %s' % (line),
+                        file=ERROR_FILE)
+                    continue
+                properties[name] = value.strip()
+        missing_properties = []
+        for required_property in REQUIRED_PROPERTIES:
+            if required_property not in properties or len(properties[required_property]) == 0:
+                missing_properties.append(required_property)
+        if missing_properties:
+            print(
+                'Missing required properties : (%s)' % (', '.join(missing_properties)),
+                file=ERROR_FILE)
+            return None
+        # return an instance of PortalProperties
+        return PortalProperties(properties[DATABASE_USER],
+                                properties[DATABASE_PW],
+                                properties[DATABASE_URL])
 
 def get_db_version(cursor):
     """ gets the version number of the database """
@@ -452,11 +429,6 @@ def main():
         src_root = script_dir.parent.parent.parent.parent
         sql_filename = src_root / 'db-scripts/src/main/resources/migration.sql'
 
-    # check existence of properties file and sql file
-    if not os.path.exists(properties_filename):
-        print('properties file %s cannot be found' % (properties_filename), file=ERROR_FILE)
-        usage()
-        sys.exit(2)
     if not os.path.exists(sql_filename):
         print('sql file %s cannot be found' % (sql_filename), file=ERROR_FILE)
         usage()
@@ -464,9 +436,6 @@ def main():
 
     # parse properties file
     portal_properties = get_portal_properties(properties_filename)
-    if portal_properties is None:
-        print('failure reading properties file (%s)' % (properties_filename), file=ERROR_FILE)
-        sys.exit(1)
 
     # warn user
     if not parser.suppress_confirmation:
