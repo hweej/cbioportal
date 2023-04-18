@@ -6,6 +6,8 @@ import sys
 import contextlib
 import argparse
 from collections import OrderedDict
+from typing import Optional
+
 import dsnparse
 
 import MySQLdb
@@ -16,16 +18,20 @@ ERROR_FILE = sys.stderr
 OUTPUT_FILE = sys.stdout
 DATABASE_USER = 'db.user'
 DATABASE_PW = 'db.password'
+DATABASE_HOST = 'db.host'
+DATABASE_NAME = 'db.portal_db_name'
 DATABASE_URL = 'db.connection_string'
+DATABASE_USESSL = 'db.use_ssl'
 VERSION_TABLE = 'info'
 VERSION_FIELD = 'DB_SCHEMA_VERSION'
-REQUIRED_PROPERTIES = [DATABASE_USER, DATABASE_PW, DATABASE_URL]
+REQUIRED_PROPERTIES = [DATABASE_USER, DATABASE_PW]
 ALLOWABLE_GENOME_REFERENCES = ['37', 'hg19', 'GRCh37', '38', 'hg38', 'GRCh38', 'mm10', 'GRCm38']
 DEFAULT_GENOME_REFERENCE = 'hg19'
 MULTI_REFERENCE_GENOME_SUPPORT_MIGRATION_STEP = (2, 11, 0)
 GENERIC_ASSAY_MIGRATION_STEP = (2, 12, 1)
 SAMPLE_FK_MIGRATION_STEP = (2, 12, 9)
 FUSIONS_VERBOTEN_STEP = (2, 12, 14)
+
 
 class PortalProperties(object):
     """ Properties object class, just has fields for db conn """
@@ -34,6 +40,7 @@ class PortalProperties(object):
         self.database_user = database_user
         self.database_pw = database_pw
         self.database_url = database_url
+
 
 def get_db_cursor(portal_properties):
     """ Establishes a MySQL connection """
@@ -58,35 +65,65 @@ def get_db_cursor(portal_properties):
     if connection is not None:
         return connection, connection.cursor()
 
-def get_portal_properties(properties_filename) -> PortalProperties:
-        properties = {}
-        with open(properties_filename, 'r') as properties_file:
-            for line in properties_file:
-                line = line.strip()
-                # skip line if its blank or a comment
-                if len(line) == 0 or line.startswith('#'):
-                    continue
-                try:
-                    name, value = line.split('=', maxsplit=1)
-                except ValueError:
-                    print(
-                        'Skipping invalid entry in property file: %s' % (line),
-                        file=ERROR_FILE)
-                    continue
-                properties[name] = value.strip()
-        missing_properties = []
-        for required_property in REQUIRED_PROPERTIES:
-            if required_property not in properties or len(properties[required_property]) == 0:
-                missing_properties.append(required_property)
-        if missing_properties:
-            print(
-                'Missing required properties : (%s)' % (', '.join(missing_properties)),
-                file=ERROR_FILE)
+
+def properties_error_message(display_name: str, property_name: str) -> str:
+    return f"No {display_name} provided for database connection. Please set '{property_name}' in portal.properties."
+
+
+def get_portal_properties(properties_filename) -> Optional[PortalProperties]:
+    properties = {}
+    with open(properties_filename, 'r') as properties_file:
+        for line in properties_file:
+            line = line.strip()
+            # skip line if its blank or a comment
+            if len(line) == 0 or line.startswith('#'):
+                continue
+            try:
+                name, value = line.split('=', maxsplit=1)
+            except ValueError:
+                print(
+                    'Skipping invalid entry in property file: %s' % (line),
+                    file=ERROR_FILE)
+                continue
+            properties[name] = value.strip()
+    missing_properties = []
+    for required_property in REQUIRED_PROPERTIES:
+        if required_property not in properties or len(properties[required_property]) == 0:
+            missing_properties.append(required_property)
+    if missing_properties:
+        print(
+            'Missing required properties : (%s)' % (', '.join(missing_properties)),
+            file=ERROR_FILE)
+        return None
+
+    if (properties[DATABASE_HOST] is not None or properties[DATABASE_NAME] is not None) and \
+            properties[DATABASE_URL] is not None:
+        print(
+            "Properties define both db.connection_string and (one of) db.host, db.portal_db_name and "
+            "db.use_ssl. Please configure with either db.connection_string (preferred), or "
+            "db.host, db.portal_db_name and db.use_ssl.", file=ERROR_FILE)
+        return None
+
+    # For backward compatibility, build connection URL from individual properties.
+    if properties[DATABASE_URL] is None:
+        if properties[DATABASE_HOST] is not None:
+            print(properties_error_message("host", "db.host"), file=ERROR_FILE)
             return None
-        # return an instance of PortalProperties
-        return PortalProperties(properties[DATABASE_USER],
-                                properties[DATABASE_PW],
-                                properties[DATABASE_URL])
+        if properties[DATABASE_NAME] is not None:
+            print(properties_error_message("database name", "db.portal_db_name"), file=ERROR_FILE)
+            return None
+        print("\n----------------------------------------------------------------------------------------------------------------")
+        print("-- Deprecation warning:")
+        print("-- You are connection to the database using the deprecated 'db.host', 'db.portal_db_name' and 'db.use_ssl' properties.")
+        print("-- Please use the 'db.connection_string' instead (see https://docs.cbioportal.org/deployment/customization/portal.properties-reference/).")
+        print("----------------------------------------------------------------------------------------------------------------\n")
+        properties[DATABASE_URL] = f"jdbc:mysql://{properties[DATABASE_HOST]}/{properties[DATABASE_NAME]}?" \
+                                   f"zeroDateTimeBehavior=convertToNull&useSSL={properties[DATABASE_USESSL]}"
+
+    return PortalProperties(properties[DATABASE_USER],
+                            properties[DATABASE_PW],
+                            properties[DATABASE_URL])
+
 
 def get_db_version(cursor):
     """ gets the version number of the database """
@@ -112,6 +149,7 @@ def get_db_version(cursor):
         return None
     return version
 
+
 def is_version_larger(version1, version2):
     """ Checks if version 1 is larger than version 2 """
     if version1[0] > version2[0]:
@@ -126,17 +164,21 @@ def is_version_larger(version1, version2):
         return True
     return False
 
+
 def is_version_equal(version1, version2):
     """ Checks if version 1 is equal to version 2"""
     return version1[0] == version2[0] and version1[1] == version2[1] and version1[2] == version2[2]
 
+
 def print_all_check_reference_genome_warnings(warnings, force_migration):
     """ Format warnings for output according to mode, and print to ERROR_FILE """
-    space =  ' '
+    space = ' '
     indent = 28 * space
     allowable_reference_genome_string = ','.join(ALLOWABLE_GENOME_REFERENCES)
-    clean_up_string = ' Please clean up the mutation_event table and ensure it only contains references to one of the valid reference genomes (%s).' % (allowable_reference_genome_string)
-    use_default_string = 'the default reference genome (%s) will be used in place of invalid reference genomes and the first encountered reference genome will be used.' % (DEFAULT_GENOME_REFERENCE)
+    clean_up_string = ' Please clean up the mutation_event table and ensure it only contains references to one of the valid reference genomes (%s).' % (
+        allowable_reference_genome_string)
+    use_default_string = 'the default reference genome (%s) will be used in place of invalid reference genomes and the first encountered reference genome will be used.' % (
+        DEFAULT_GENOME_REFERENCE)
     use_force_string = 'OR use the "--force" option to override this warning, then %s' % (use_default_string)
     forcing_string = '--force option in effect : %s' % (use_default_string)
     for warning in warnings:
@@ -145,16 +187,20 @@ def print_all_check_reference_genome_warnings(warnings, force_migration):
         else:
             print('%s%s%s\n%s%s\n' % (indent, warning, clean_up_string, indent, use_force_string), file=ERROR_FILE)
 
+
 def validate_reference_genome_values_for_study(warnings, ncbi_to_count, study):
     """ check if there are unrecognized or varied ncbi_build values for the study, add to warnings if problems are found """
     if len(ncbi_to_count) == 1:
-        for retrieved_ncbi_build in ncbi_to_count: # single iteration
+        for retrieved_ncbi_build in ncbi_to_count:  # single iteration
             if retrieved_ncbi_build.upper() not in [x.upper() for x in ALLOWABLE_GENOME_REFERENCES]:
-                msg = 'WARNING: Study %s contains mutation_event records with unsupported NCBI_BUILD value %s.'%(study, retrieved_ncbi_build)
+                msg = 'WARNING: Study %s contains mutation_event records with unsupported NCBI_BUILD value %s.' % (
+                study, retrieved_ncbi_build)
                 warnings.append(msg)
     elif len(ncbi_to_count) > 1:
-        msg = 'WARNING: Study %s contains mutation_event records with %s NCBI_BUILD values {ncbi_build:record_count,...} %s.'%(study, len(ncbi_to_count), ncbi_to_count)
+        msg = 'WARNING: Study %s contains mutation_event records with %s NCBI_BUILD values {ncbi_build:record_count,...} %s.' % (
+        study, len(ncbi_to_count), ncbi_to_count)
         warnings.append(msg)
+
 
 def check_reference_genome(portal_properties, cursor, force_migration):
     """ query database for ncbi_build values, aggregate per study, then validate and report problems """
@@ -171,13 +217,13 @@ def check_reference_genome(portal_properties, cursor, force_migration):
                            group by CANCER_STUDY_IDENTIFIER, NCBI_BUILD
                        """
         cursor.execute(sql_statement)
-        study_to_ncbi_to_count = {} # {cancer_study_identifier : {ncbi_build  : record_count}}
+        study_to_ncbi_to_count = {}  # {cancer_study_identifier : {ncbi_build  : record_count}}
         for row in cursor.fetchall():
             retrieved_ncbi_build, ref_count, study = row
             if study in study_to_ncbi_to_count:
                 study_to_ncbi_to_count[study][retrieved_ncbi_build] = ref_count
             else:
-                study_to_ncbi_to_count[study] = {retrieved_ncbi_build : ref_count}
+                study_to_ncbi_to_count[study] = {retrieved_ncbi_build: ref_count}
         for study in study_to_ncbi_to_count:
             validate_reference_genome_values_for_study(warnings, study_to_ncbi_to_count[study], study)
     except MySQLdb.Error as msg:
@@ -187,6 +233,7 @@ def check_reference_genome(portal_properties, cursor, force_migration):
         print_all_check_reference_genome_warnings(warnings, force_migration)
         if not force_migration:
             sys.exit(1)
+
 
 def check_and_exit_if_fusions(cursor):
     try:
@@ -198,7 +245,9 @@ def check_and_exit_if_fusions(cursor):
             """)
         fusion_count = cursor.fetchone()
         if (fusion_count[0] >= 1):
-            print('Found %i records in the mutation_event table where the mutation_type was "Fusion". The latest database schema does not allow records in the mutation table where mutation_type is set to "Fusion". Studies linked to existing records of this type should be deleted in order to migrate to DB version 2.12.14' % (fusion_count), file=ERROR_FILE)
+            print(
+                'Found %i records in the mutation_event table where the mutation_type was "Fusion". The latest database schema does not allow records in the mutation table where mutation_type is set to "Fusion". Studies linked to existing records of this type should be deleted in order to migrate to DB version 2.12.14' % (
+                    fusion_count), file=ERROR_FILE)
             # get the list of studies that need to be cleaned up
             cursor.execute(
                 """
@@ -218,10 +267,11 @@ def check_and_exit_if_fusions(cursor):
             for row in rows:
                 print("\t%s" % (row[0]), file=ERROR_FILE)
             sys.exit(1)
-    
+
     except MySQLdb.Error as msg:
         print(msg, file=ERROR_FILE)
         sys.exit(1)
+
 
 # TODO: remove this after we update mysql version
 def check_and_remove_invalid_foreign_keys(cursor):
@@ -258,6 +308,7 @@ def check_and_remove_invalid_foreign_keys(cursor):
         print(msg, file=ERROR_FILE)
         sys.exit(1)
 
+
 def check_and_remove_type_of_cancer_id_foreign_key(cursor):
     """The TYPE_OF_CANCER_ID foreign key in the sample table can be either sample_ibfk_1 or sample_ibfk_2. Figure out which one it is and remove it"""
     try:
@@ -273,7 +324,9 @@ def check_and_remove_type_of_cancer_id_foreign_key(cursor):
             """)
         rows = cursor.fetchall()
         if (len(rows) >= 1):
-            print('sample_ibfk_1 is the foreign key in table sample for type_of_cancer_id column in table type_of_cancer.', file=OUTPUT_FILE)
+            print(
+                'sample_ibfk_1 is the foreign key in table sample for type_of_cancer_id column in table type_of_cancer.',
+                file=OUTPUT_FILE)
             cursor.execute(
                 """
                     ALTER TABLE `sample` DROP FOREIGN KEY sample_ibfk_1;
@@ -291,19 +344,23 @@ def check_and_remove_type_of_cancer_id_foreign_key(cursor):
             """)
         rows = cursor.fetchall()
         if (len(rows) >= 1):
-            print('sample_ibfk_2 is the foreign key in table sample for type_of_cancer_id column in table type_of_cancer.', file=OUTPUT_FILE)
+            print(
+                'sample_ibfk_2 is the foreign key in table sample for type_of_cancer_id column in table type_of_cancer.',
+                file=OUTPUT_FILE)
             cursor.execute(
                 """
                     ALTER TABLE `sample` DROP FOREIGN KEY sample_ibfk_2;
                 """)
-            print('sample_ibfk_2 foreign key has been deleted.', file=OUTPUT_FILE)                  
+            print('sample_ibfk_2 foreign key has been deleted.', file=OUTPUT_FILE)
     except MySQLdb.Error as msg:
         print(msg, file=ERROR_FILE)
         sys.exit(1)
 
+
 def strip_trailing_comment_from_line(line):
-    line_parts = re.split("--\s",line)
+    line_parts = re.split("--\s", line)
     return line_parts[0]
+
 
 def run_migration(db_version, sql_filename, connection, cursor, no_transaction, stop_at_version=None):
     """
@@ -354,6 +411,7 @@ def run_migration(db_version, sql_filename, connection, cursor, no_transaction, 
     else:
         print('Everything up to date, nothing to migrate.', file=OUTPUT_FILE)
 
+
 def run_statements(statements, connection, cursor, no_transaction):
     try:
         if no_transaction:
@@ -378,10 +436,12 @@ def run_statements(statements, connection, cursor, no_transaction):
                 sys.exit(1)
         connection.commit()
 
+
 def warn_user():
     """Warn the user to back up their database before the script runs."""
     response = input(
-        'WARNING: This script will alter your database! Be sure to back up your data before running.\nContinue running DB migration? (y/n) '
+        'WARNING: This script will alter your database! Be sure to back up your data before running.\n'
+        'Continue running DB migration? (y/n) '
     ).strip()
     while response.lower() != 'y' and response.lower() != 'n':
         response = input(
@@ -390,10 +450,12 @@ def warn_user():
     if response.lower() == 'n':
         sys.exit()
 
+
 def usage():
     print(
         'migrate_db.py --properties-file [portal properties file] --sql [sql migration file]',
         file=OUTPUT_FILE)
+
 
 def main():
     """ main function to run mysql migration """
@@ -451,16 +513,19 @@ def main():
     with contextlib.closing(connection):
         db_version = get_db_version(cursor)
         if is_version_larger(MULTI_REFERENCE_GENOME_SUPPORT_MIGRATION_STEP, db_version):
-            run_migration(db_version, sql_filename, connection, cursor, parser.no_transaction, stop_at_version=MULTI_REFERENCE_GENOME_SUPPORT_MIGRATION_STEP)
-            #retrieve reference genomes from database
+            run_migration(db_version, sql_filename, connection, cursor, parser.no_transaction,
+                          stop_at_version=MULTI_REFERENCE_GENOME_SUPPORT_MIGRATION_STEP)
+            # retrieve reference genomes from database
             check_reference_genome(portal_properties, cursor, parser.force)
             db_version = get_db_version(cursor)
         if is_version_larger(SAMPLE_FK_MIGRATION_STEP, db_version):
-            run_migration(db_version, sql_filename, connection, cursor, parser.no_transaction, stop_at_version=SAMPLE_FK_MIGRATION_STEP)
+            run_migration(db_version, sql_filename, connection, cursor, parser.no_transaction,
+                          stop_at_version=SAMPLE_FK_MIGRATION_STEP)
             check_and_remove_type_of_cancer_id_foreign_key(cursor)
             db_version = get_db_version(cursor)
         if is_version_larger(FUSIONS_VERBOTEN_STEP, db_version):
-            run_migration(db_version, sql_filename, connection, cursor, parser.no_transaction, stop_at_version=FUSIONS_VERBOTEN_STEP)
+            run_migration(db_version, sql_filename, connection, cursor, parser.no_transaction,
+                          stop_at_version=FUSIONS_VERBOTEN_STEP)
             check_and_exit_if_fusions(cursor)
             db_version = get_db_version(cursor)
         run_migration(db_version, sql_filename, connection, cursor, parser.no_transaction)
@@ -469,6 +534,7 @@ def main():
         if not is_version_larger(GENERIC_ASSAY_MIGRATION_STEP, db_version):
             check_and_remove_invalid_foreign_keys(cursor)
     print('Finished.', file=OUTPUT_FILE)
+
 
 # do main
 if __name__ == '__main__':
