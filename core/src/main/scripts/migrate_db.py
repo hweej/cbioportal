@@ -6,9 +6,8 @@ import sys
 import contextlib
 import argparse
 from collections import OrderedDict
-from typing import Optional
 
-import dsnparse
+from importer.cbioportal_common import get_database_properties, get_db_cursor
 
 import MySQLdb
 from pathlib import Path
@@ -16,15 +15,8 @@ from pathlib import Path
 # globals
 ERROR_FILE = sys.stderr
 OUTPUT_FILE = sys.stdout
-DATABASE_USER = 'db.user'
-DATABASE_PW = 'db.password'
-DATABASE_HOST = 'db.host'
-DATABASE_NAME = 'db.portal_db_name'
-DATABASE_URL = 'db.connection_string'
-DATABASE_USESSL = 'db.use_ssl'
 VERSION_TABLE = 'info'
 VERSION_FIELD = 'DB_SCHEMA_VERSION'
-REQUIRED_PROPERTIES = [DATABASE_USER, DATABASE_PW]
 ALLOWABLE_GENOME_REFERENCES = ['37', 'hg19', 'GRCh37', '38', 'hg38', 'GRCh38', 'mm10', 'GRCm38']
 DEFAULT_GENOME_REFERENCE = 'hg19'
 MULTI_REFERENCE_GENOME_SUPPORT_MIGRATION_STEP = (2, 11, 0)
@@ -40,89 +32,6 @@ class PortalProperties(object):
         self.database_user = database_user
         self.database_pw = database_pw
         self.database_url = database_url
-
-
-def get_db_cursor(portal_properties):
-    """ Establishes a MySQL connection """
-    try:
-        url_elements = dsnparse.parse(portal_properties.database_url)
-        connection_kwargs = {
-            "host": url_elements.host,
-            "port": url_elements.port if url_elements.port is not None else 3306,
-            "db": url_elements.paths[0],
-            "user": portal_properties.database_user,
-            "passwd": portal_properties.database_pw,
-            "ssl": "useSSL" not in url_elements.query or url_elements.query["useSSL"] == "true"
-        }
-        connection = MySQLdb.connect(**connection_kwargs)
-    except MySQLdb.Error as exception:
-        print(exception, file=ERROR_FILE)
-        message = (
-            "--> Error connecting to server with URL"
-            + portal_properties.database_url)
-        print(message, file=ERROR_FILE)
-        raise ConnectionError(message) from exception
-    if connection is not None:
-        return connection, connection.cursor()
-
-
-def properties_error_message(display_name: str, property_name: str) -> str:
-    return f"No {display_name} provided for database connection. Please set '{property_name}' in portal.properties."
-
-
-def get_portal_properties(properties_filename) -> Optional[PortalProperties]:
-    properties = {}
-    with open(properties_filename, 'r') as properties_file:
-        for line in properties_file:
-            line = line.strip()
-            # skip line if its blank or a comment
-            if len(line) == 0 or line.startswith('#'):
-                continue
-            try:
-                name, value = line.split('=', maxsplit=1)
-            except ValueError:
-                print(
-                    'Skipping invalid entry in property file: %s' % (line),
-                    file=ERROR_FILE)
-                continue
-            properties[name] = value.strip()
-    missing_properties = []
-    for required_property in REQUIRED_PROPERTIES:
-        if required_property not in properties or len(properties[required_property]) == 0:
-            missing_properties.append(required_property)
-    if missing_properties:
-        print(
-            'Missing required properties : (%s)' % (', '.join(missing_properties)),
-            file=ERROR_FILE)
-        return None
-
-    if (properties[DATABASE_HOST] is not None or properties[DATABASE_NAME] is not None) and \
-            properties[DATABASE_URL] is not None:
-        print(
-            "Properties define both db.connection_string and (one of) db.host, db.portal_db_name and "
-            "db.use_ssl. Please configure with either db.connection_string (preferred), or "
-            "db.host, db.portal_db_name and db.use_ssl.", file=ERROR_FILE)
-        return None
-
-    # For backward compatibility, build connection URL from individual properties.
-    if properties[DATABASE_URL] is None:
-        if properties[DATABASE_HOST] is not None:
-            print(properties_error_message("host", "db.host"), file=ERROR_FILE)
-            return None
-        if properties[DATABASE_NAME] is not None:
-            print(properties_error_message("database name", "db.portal_db_name"), file=ERROR_FILE)
-            return None
-        print("\n----------------------------------------------------------------------------------------------------------------")
-        print("-- Deprecation warning:")
-        print("-- You are connection to the database using the deprecated 'db.host', 'db.portal_db_name' and 'db.use_ssl' properties.")
-        print("-- Please use the 'db.connection_string' instead (see https://docs.cbioportal.org/deployment/customization/portal.properties-reference/).")
-        print("----------------------------------------------------------------------------------------------------------------\n")
-        properties[DATABASE_URL] = f"jdbc:mysql://{properties[DATABASE_HOST]}/{properties[DATABASE_NAME]}?" \
-                                   f"zeroDateTimeBehavior=convertToNull&useSSL={properties[DATABASE_USESSL]}"
-
-    return PortalProperties(properties[DATABASE_USER],
-                            properties[DATABASE_PW],
-                            properties[DATABASE_URL])
 
 
 def get_db_version(cursor):
@@ -497,7 +406,10 @@ def main():
         sys.exit(2)
 
     # parse properties file
-    portal_properties = get_portal_properties(properties_filename)
+    portal_properties = get_database_properties(properties_filename)
+    if portal_properties is None:
+        print('failure reading properties file (%s)' % properties_filename, file=ERROR_FILE)
+        sys.exit(1)
 
     # warn user
     if not parser.suppress_confirmation:
