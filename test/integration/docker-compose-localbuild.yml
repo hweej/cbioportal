@@ -10,6 +10,6 @@ services:
      - $PORTAL_INFO_DIR:/portalinfo/
      # make docker compose run the cbioportal version-under-test
      # by volume mounting the local portal source folder into the container
-     # and running 
+     # and running
      - $PORTAL_SOURCE_DIR:/cbioportal/
      - $PORTAL_SOURCE_DIR/portal/target/cbioportal.war:/app.war

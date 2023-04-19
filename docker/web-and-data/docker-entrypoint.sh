@@ -3,7 +3,7 @@ set -eo pipefail
 shopt -s nullglob
 
 BAKED_IN_WAR_CONFIG_FILE=/cbioportal-webapp/WEB-INF/classes/portal.properties
-CUSTOM_PROPERTIES_FILE=/cbioportal/portal.properties
+CUSTOM_PROPERTIES_FILE=cbioportal/portal.properties
 
 # check to see if this file is being run or sourced from another script
 _is_sourced() {
@@ -23,19 +23,53 @@ parse_db_params_from_config_and_command_line() {
     else
         PROPERTIES_FILE=$BAKED_IN_WAR_CONFIG_FILE
     fi
-
-    for param in db.host db.user db.portal_db_name db.password; do
+    for param in db.host db.user db.portal_db_name db.password db.connection_string; do
         if $(parse_db_params_from_command_line $@ | grep -q $param); then
-            parse_db_params_from_command_line $@ | grep "^$param"
+            prop=$(parse_db_params_from_command_line $@ | grep "^$param" || [[ $? == 1 ]])
         else
-            grep -v '^#' $PROPERTIES_FILE | grep "^$param"
+            prop=$(grep -v '^#' $PROPERTIES_FILE | grep "^$param" || [[ $? == 1 ]])
+        fi
+        if [[ -n "$prop" ]]
+        then
+            # Replace dot in parameter name with underscore.
+            prop=$(sed "s/^db\./db_/" <<< $prop)
+            if [[ $param == db.connection_string ]]
+            then
+                # Remove the parameters (?...) from the connection URL.
+                echo $(sed -r "s/^([^=]+)=([^\?]+).*/\1=\2/" <<< $prop)
+            else 
+                echo $prop
+            fi
         fi
     done
 }
 
+parse_connection_string() {
+    # Adapted from: https://stackoverflow.com/a/45977232
+    readonly URI_REGEX='^(([^:/?#]+):)+?(//((([^:/?#]+)@)?([^:/?#]+)(:([0-9]+))?))?(/([^?#]*))(\?([^#]*))?(#(.*))?'
+    #                    ↑↑             ↑  ↑↑↑            ↑         ↑ ↑            ↑ ↑        ↑  ↑        ↑ ↑
+    #                    |2 scheme      |  ||6 userinfo   7 host    | 9 port       | 11 rpath |  13 query | 15 fragment
+    #                    1 scheme:      |  |5 userinfo@             8 :…           10 path    12 ?…       14 #…
+    #                                   |  4 authority
+    #                                   3 //…
+    echo db_host=$([[ "$1" =~ $URI_REGEX ]] && echo "${BASH_REMATCH[7]}")
+    echo db_port=$([[ "$1" =~ $URI_REGEX ]] && echo "${BASH_REMATCH[9]}")
+}
+
 check_db_connection() {
-    eval "$(parse_db_params_from_config_and_command_line $@ | sed 's/^db\./db_/g')"
-    POTENTIAL_DB_PARAMS=$@
+    eval $(parse_db_params_from_config_and_command_line $@)
+    
+    if ([[ -n $db_host ]] || [[ -n $db_portal_db_name ]] || [[ -n $db_use_ssl ]]) && [[ -n $db_connection_string ]]
+    then
+        echo "The portal.properties file defines both db.connection_string and (one of) db.host, db.portal_db_name and "
+        echo "db.use_ssl. Please configure with either db.connection_string (preferred), or db.host, db.portal_db_name and db.use_ssl."
+        exit 1
+    fi
+
+    if [[ -n $db_connection_string ]]
+    then 
+        eval "$(parse_connection_string $db_connection_string)"
+    fi
 
     if [ -z ${db_port+x} ] # is $db_port unset?
     then 
@@ -45,7 +79,6 @@ check_db_connection() {
             db_port="3306" # use default port
         fi
     fi
-
 
     while ! mysqladmin ping -s -h$(echo ${db_host} | cut -d: -f1) -P${db_port} -u${db_user} -p${db_password};
     do
@@ -77,7 +110,7 @@ _main() {
         # available, otherwise use portal.properties
         if [ -n "$SHOW_DEBUG_INFO" ] && [ "$SHOW_DEBUG_INFO" != "false" ]; then
             echo "Using database config:"
-            parse_db_params_from_config_and_command_line $@
+            #parse_db_params_from_config_and_command_line $@
         fi
 
         check_db_connection $@
