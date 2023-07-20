@@ -88,8 +88,7 @@ public class SpringUtil {
      *
      * @param context
      */
-    public static synchronized void initDataSource(ApplicationContext context)
-    {
+    public static synchronized void initDataSource(ApplicationContext context) {
         SpringUtil.applicationContext = context;
     }
 }
