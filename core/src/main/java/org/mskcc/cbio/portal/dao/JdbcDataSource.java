@@ -41,7 +41,7 @@ public class JdbcDataSource extends BasicDataSource {
                 " Or preferably, set the 'db.connection_string' and remove 'db.host', 'db.portal_db_name' and 'db.use_ssl (best practice).");
             System.out.println("\n----------------------------------------------------------------------------------------------------------------");
             System.out.println("-- Deprecation warning:");
-            System.out.println("-- You are connection to the database using the deprecated 'db.host', 'db.portal_db_name' and 'db.use_ssl' properties.");
+            System.out.println("-- You are connecting to the database using the deprecated 'db.host', 'db.portal_db_name' and 'db.use_ssl' properties.");
             System.out.println("-- Please use the 'db.connection_string' instead (see https://docs.cbioportal.org/deployment/customization/portal.properties-reference/).");
             System.out.println("----------------------------------------------------------------------------------------------------------------\n");
             connectionURL = String.format(
