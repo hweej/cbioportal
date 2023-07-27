@@ -45,7 +45,7 @@ PORTAL_PROPERTY_DATABASE_HOST = 'db.host'
 PORTAL_PROPERTY_DATABASE_NAME = 'db.portal_db_name'
 PORTAL_PROPERTY_DATABASE_URL = 'db.connection_string'
 PORTAL_PROPERTY_DATABASE_USESSL = 'db.use_ssl'
-REQUIRED_DATABASE_PROPERTIES = [PORTAL_PROPERTY_DATABASE_USER, PORTAL_PROPERTY_DATABASE_PW]
+REQUIRED_DATABASE_PROPERTIES = [PORTAL_PROPERTY_DATABASE_USER, PORTAL_PROPERTY_DATABASE_PW, PORTAL_PROPERTY_DATABASE_URL]
 
 # provides a key for data types to metafile specification dict.
 class MetaFileTypes(object):
@@ -1039,32 +1039,18 @@ def get_database_properties(properties_filename: str) -> Optional[PortalProperti
             file=ERROR_FILE)
         return None
 
-    if (properties.get(PORTAL_PROPERTY_DATABASE_HOST) is not None or properties.get(PORTAL_PROPERTY_DATABASE_NAME) is not None)\
-            and properties.get(PORTAL_PROPERTY_DATABASE_URL) is not None:
-        print(
-            "The portal.properties file defines both db.connection_string and (one of) db.host, db.portal_db_name and "
-            "db.use_ssl. Please configure with either db.connection_string (preferred), or "
-            "db.host, db.portal_db_name and db.use_ssl.", file=ERROR_FILE)
+    if properties.get(PORTAL_PROPERTY_DATABASE_HOST) is not None \
+        or properties.get(PORTAL_PROPERTY_DATABASE_NAME) is not None \
+        or properties.get(PORTAL_PROPERTY_DATABASE_USESSL) is not None:
+        print("""
+            ----------------------------------------------------------------------------------------------------------------
+            -- Connection error:
+            -- You try to connect to the database using the deprecated 'db.host', 'db.portal_db_name' and 'db.use_ssl' properties.
+            -- Please remove these properties and use the 'db.connection_string' property instead. See https://docs.cbioportal.org/deployment/customization/portal.properties-reference/
+            -- for assistance on building a valid connection string.
+            ------------------------------------------------------------f---------------------------------------------------
+        """, file=ERROR_FILE)
         return None
-
-    # For backward compatibility, build connection URL from individual properties
-    if properties.get(PORTAL_PROPERTY_DATABASE_URL) is None:
-        if properties.get(PORTAL_PROPERTY_DATABASE_HOST) is None or properties.get(PORTAL_PROPERTY_DATABASE_NAME) is None:
-            print("No connection information provided for database connection. Please set 'db.host' and "
-                "'db.portal_db_name' in portal.properties. Or better, use the 'db.connection_string' "
-                "(see https://docs.cbioportal.org/deployment/customization/portal.properties-reference/)",
-                file=ERROR_FILE)
-            return None
-        print("\n" + "-"*112)
-        print("-- Deprecation warning:")
-        print("-- You are connection to the database using the deprecated 'db.host', 'db.portal_db_name' and "
-            "'db.use_ssl' properties.")
-        print("-- Please use the 'db.connection_string' instead "
-            "(see https://docs.cbioportal.org/deployment/customization/portal.properties-reference/).")
-        print("-"*112 + "\n")
-        properties[PORTAL_PROPERTY_DATABASE_URL] = f"jdbc:mysql://{properties[PORTAL_PROPERTY_DATABASE_HOST]}" \
-            f"/{properties[PORTAL_PROPERTY_DATABASE_NAME]}" \
-            f"?zeroDateTimeBehavior=convertToNull&useSSL={properties[PORTAL_PROPERTY_DATABASE_USESSL]}"
 
     return PortalProperties(properties[PORTAL_PROPERTY_DATABASE_USER],
                             properties[PORTAL_PROPERTY_DATABASE_PW],

@@ -18,38 +18,23 @@ public class JdbcDataSource extends BasicDataSource {
         String password = dbProperties.getDbPassword();
         String mysqlDriverClassName = dbProperties.getDbDriverClassName();
         String database = dbProperties.getDbName();
-        String useSSL = (!StringUtils.isBlank(dbProperties.getDbUseSSL())) ? dbProperties.getDbUseSSL() : "false";
         String enablePooling = (!StringUtils.isBlank(dbProperties.getDbEnablePooling())) ? dbProperties.getDbEnablePooling(): "false";
         String connectionURL = dbProperties.getConnectionURL();
+        
+        Assert.isTrue(
+            defined(host) || defined(database) || defined(dbProperties.getDbUseSSL()),
+            "\n----------------------------------------------------------------------------------------------------------------" +
+                "-- Connection error:\n" +
+                "-- You try to connect to the database using the deprecated 'db.host', 'db.portal_db_name' and 'db.use_ssl' properties.\n" +
+                "-- Please remove these properties and use the 'db.connection_string' property instead. See https://docs.cbioportal.org/deployment/customization/portal.properties-reference/\n" +
+                "-- for assistance on building a valid connection string.\n" +
+                "----------------------------------------------------------------------------------------------------------------\n"
+        );
         
         Assert.hasText(userName, errorMessage("username", "db.user"));
         Assert.hasText(password, errorMessage("password", "db.password"));
         Assert.hasText(mysqlDriverClassName, errorMessage("driver class name", "db.driver"));
-        
-        Assert.isTrue(
-            !((defined(host) || defined(database) || defined(dbProperties.getDbUseSSL())) && defined(connectionURL)),
-            "The portal.properties file defines both db.connection_string and (one of) db.host, " +
-             "db.portal_db_name and db.use_ssl. Please configure with either db.connection_string (preferred), " + 
-             "or db.host, db.portal_db_name and db.use_ssl."
-        );
-        
-        // For backward compatibility, build connection URL from individual properties.
-        if (connectionURL == null) {
-            Assert.hasText(host, errorMessage("host", "db.host") + 
-                " Or preferably, set the 'db.connection_string' and remove 'db.host', 'db.portal_db_name' and 'db.use_ssl' (best practice).");
-            Assert.hasText(database, errorMessage("database name", "db.portal_db_name") + 
-                " Or preferably, set the 'db.connection_string' and remove 'db.host', 'db.portal_db_name' and 'db.use_ssl (best practice).");
-            System.out.println("\n----------------------------------------------------------------------------------------------------------------");
-            System.out.println("-- Deprecation warning:");
-            System.out.println("-- You are connecting to the database using the deprecated 'db.host', 'db.portal_db_name' and 'db.use_ssl' properties.");
-            System.out.println("-- Please use the 'db.connection_string' instead (see https://docs.cbioportal.org/deployment/customization/portal.properties-reference/).");
-            System.out.println("----------------------------------------------------------------------------------------------------------------\n");
-            connectionURL = String.format(
-                "jdbc:mysql://%s/%s?zeroDateTimeBehavior=convertToNull&useSSL=%s",
-                host, database, useSSL
-            );
-        }
-        
+
         this.setUrl(connectionURL);
 
         //  Set up poolable data source

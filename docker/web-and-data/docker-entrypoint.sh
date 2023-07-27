@@ -59,10 +59,14 @@ parse_connection_string() {
 check_db_connection() {
     eval $(parse_db_params_from_config_and_command_line $@)
     
-    if ([[ -n $db_host ]] || [[ -n $db_portal_db_name ]] || [[ -n $db_use_ssl ]]) && [[ -n $db_connection_string ]]
+    if [[ -n $db_host ]] || [[ -n $db_portal_db_name ]] || [[ -n $db_use_ssl ]]
     then
-        echo "The portal.properties file defines both db.connection_string and (one of) db.host, db.portal_db_name and "
-        echo "db.use_ssl. Please configure with either db.connection_string (preferred), or db.host, db.portal_db_name and db.use_ssl."
+        echo "----------------------------------------------------------------------------------------------------------------"
+        echo "-- Connection error:"
+        echo "-- You try to connect to the database using the deprecated 'db.host', 'db.portal_db_name' and 'db.use_ssl' properties."
+        echo "-- Please remove these properties and use the 'db.connection_string' property instead. See https://docs.cbioportal.org/deployment/customization/portal.properties-reference/"
+        echo "-- for assistance on building a valid connection string."
+        echo "------------------------------------------------------------f---------------------------------------------------"
         exit 1
     fi
 
