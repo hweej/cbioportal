@@ -22,7 +22,7 @@ For example:
 jdbc:mysql://localhost:3306/cbiodb?zeroDateTimeBehavior=convertToNull&useSSL=false
 ```
 
-:warning: The fields `db.host` and `db.portal_db_name` are deprecated. It is recommended to configure the database connection using
+:warning: The fields `db.host` and `db.portal_db_name` and `db.use_ssl` are deprecated. It is recommended to configure the database connection using
 the `db.connection_string` instead.
 
 `db.tomcat_resource_name` is required in order to work with the tomcat database connection pool and should have the default value jdbc/cbioportal in order to work correctly with the your WAR file.
