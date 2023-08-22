@@ -8,6 +8,7 @@ import org.cbioportal.webparam.StudyViewFilter;
 import org.cbioportal.webparam.filter.AndedPatientTreatmentFilters;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -25,6 +26,11 @@ public abstract class AbstractPatientTreatmentFilter implements StudyViewSubFilt
         List<SampleIdentifier> identifiers,
         StudyViewFilter filter
     ) {
+
+        if (identifiers == null || identifiers.isEmpty()) {
+            return new ArrayList<>();
+        }
+        
         AndedPatientTreatmentFilters filters = getFilters(filter);
 
         List<String> sampleIds = identifiers.stream()

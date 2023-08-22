@@ -100,6 +100,9 @@ skin.right_nav.show_whats_new=
 skin.right_nav.show_twitter=
 ```
 
+#Interactive tours section
+skin.right_nav.show_web_tours=
+
 ### Control the content of specific sections
 
 Setting controlling the blurb: you can add any HTML code here that you want to visualize. This will be shown between the cBioPortal menu and the Query selector in the main page.
@@ -153,6 +156,13 @@ Different samples of a patient may have been analyzed with different gene panels
 skin.patientview.filter_genes_profiled_all_samples=
 ```
 
+### Control default settings of the VAF line chart in the genomic evolution tab of patient view
+If you want to enable log scale and sequential mode by default, set this property to `true`:
+```
+vaf.log_scale.default=true|false
+vaf.sequential_mode.default=true|false
+```
+
 ### Control unauthorized studies to be displayed on the home page
 
 By default, on an authenticated portal the home page will only show studies for which the current user is authorized. By setting the _skin.home\_page.show\_unauthorized\_studies_ property to _true_ the home page will also show unauthorized studies. The unauthorized studies will appear greyed out and cannot be selected for downstream analysis in Results View or Study View.
@@ -165,6 +175,13 @@ If _show\_unauthorized\_studies_ feature has been enabled, a message (template) 
 
 ```
 skin.home_page.unauthorized_studies_global_message=
+```
+
+### Show badge with reference genome
+In instances with hg19 and hg38 studies you can show the reference genome in the home page next to the number of samples. This can be done setting this property to `true` (`false` by default):
+
+```
+skin.home_page.show_reference_genome=
 ```
 
 ### Control the appearance of the settings menu in study view and group comparison that controls custom annotation-based filtering
@@ -429,6 +446,11 @@ oncoprint.oncokb.default=true|false
 oncoprint.hotspots.default=true|false
 ```
 
+If you want to enable oncoprint heatmap clustering by default, set this property to `true`:
+```
+oncoprint.clustered.default=true|false
+```
+
 **Automatic hiding of variants of unknown significance (VUS)**
 
 By default, the selection box to hide VUS mutations is unchecked. If you want to automatically hide VUS, set this property to `true`. Default is `false`.
@@ -651,6 +673,15 @@ enable_cross_study_expression = (selectedStudies)=>{ [your logic] return true|fa
 enable_cross_study_expression = true|false
 ```
 
+## Combined Study View Summary Limits
+### Background
+A limit is added to prevent poor performance of Study View when selecting too large sample numbers.
+### Properties
+* `studyview.max_samples_selected`: Limit is disabled when not set
+
+### Behavior
+When these limits are exceeded the "Explore Selected Studies" button will be disabled on the Study View Page.
+
 ## Request Body Compression
 
 ### Background
@@ -687,3 +718,21 @@ There are two `portal.property` values related to this feature:
 * This is not a cure-all for performance issues
   * Most requests the cBioPortal makes do not have large request bodies, so most requests will not be compressed, and will see no performance improvement.
   * Users with good upload speeds will see minimal performance improvements, as their upload speed is not a bottleneck.
+
+# DataSets Tab (Study Download Links)
+### Background
+The DataSets tab has the ability to create a ``download`` button that allows users to quickly download "raw" public studies.
+### Properties
+* ``study_download_url`` : when set, the feature will be enabled
+### Behavior
+For private instances that want to replicate the``public-portal`` they first must set up their studies 
+they want available for download in a similar format to what is described in the Example section below.
+The studies are located on the ``public-portal`` at  `https://cbioportal-datahub.s3.amazonaws.com/`. 
+Then there is a ``study_list.json`` defined that list the studies that can be downloaded.
+The studies to be downloaded need to be compressed with the extension ``tar.gz``
+
+### Example
+* We have set ``study_download_url`` property to `https://cbioportal-datahub.s3.amazonaws.com/`
+* ``study_list.json`` resides ``https://cbioportal-datahub.s3.amazonaws.com/study_list.json``
+  * ``[ "acbc_mskcc_2015", "acc_2019"]`` Example of contents
+* ``acbc_mskcc_2015.tar.gz`` resides `https://cbioportal-datahub.s3.amazonaws.com/acbc_mskcc_2015.tar.gz`

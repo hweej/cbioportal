@@ -2,9 +2,11 @@ package org.cbioportal.persistence;
 
 import java.util.List;
 
+
+import org.cbioportal.model.GeneFilterQuery;
+import org.cbioportal.model.StructuralVariantFilterQuery;
 import org.cbioportal.model.StructuralVariant;
 import org.cbioportal.model.StructuralVariantQuery;
-import org.cbioportal.webparam.GeneFilterQuery;
 import org.springframework.cache.annotation.Cacheable;
 
 public interface StructuralVariantRepository {
@@ -20,4 +22,9 @@ public interface StructuralVariantRepository {
     List<StructuralVariant> fetchStructuralVariantsByGeneQueries(List<String> molecularProfileIds,
                                                                  List<String> sampleIds,
                                                                  List<GeneFilterQuery> geneQueries);
+
+    @Cacheable(cacheResolver = "generalRepositoryCacheResolver", condition = "@cacheEnabledConfig.getEnabled()")
+    List<StructuralVariant> fetchStructuralVariantsByStructVarQueries(List<String> molecularProfileIds,
+                                                             List<String> sampleIds,
+                                                             List<StructuralVariantFilterQuery> structVarQueries);
 }

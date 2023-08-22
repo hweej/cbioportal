@@ -28,6 +28,7 @@ Short videos that show how to perform specific analyses or how to use specific p
 6. How to explore the data in a study [youtube.com](https://www.youtube.com/watch?v=N8ffDgkqDWc)
 7. How to run a query for genes of interest [youtube.com](https://www.youtube.com/watch?v=MH-kY5usA70)
 8. How to download data [youtube.com](https://www.youtube.com/watch?v=JId304dp3tc)
+9. Navigating AACR GENIE - Biopharma Collaborative (BPC) dataset [youtube.com](https://www.youtube.com/playlist?list=PLE2tjlUyHL8Gn4ythnuvf2BxWJVpAxkMM)
 
 ### Documentation
 * Frequently Asked Questions [FAQ](/user-guide/faq.md)
@@ -37,3 +38,7 @@ Short videos that show how to perform specific analyses or how to use specific p
 * Cerami et al. Cancer Discovery 2012 [PubMed](http://cancerdiscovery.aacrjournals.org/content/2/5/401.abstract)
 * Gao et al. Science Signaling 2013 [PubMed](https://www.ncbi.nlm.nih.gov/pubmed/23550210)
 
+### Tutorials by others
+* cBioPortal Tutorial Series by Jackson Laboratory [youtube.com](https://www.youtube.com/watch?v=tWdrcZOiXc0&list=PLWNp6Z5dXDZ7yRyny8aypSwrArs6e0EJi)
+* Using the Cancer Digital Slide Archive in cBioPortal by Nicole M. Rivera Acevedo [youtube.com (English)](https://www.youtube.com/watch?v=oP0GbWmfVWM) | [youtube.com (Spanish)](https://www.youtube.com/watch?v=QyOVCxjVIPU)
+* Visualizing and Downloading RNASeq data from cBioPortal by Farhan Haq [youtube.com](https://www.youtube.com/watch?v=I3KiLCE35Mk&list=PLvK49Q0ARs91Ilonq_07n0q9Cd5pOsdJW)

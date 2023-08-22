@@ -2600,12 +2600,12 @@ class ClinicalValidator(Validator):
                         invalid_values = True
                 elif self.METADATA_LINES[line_index] == 'priority':
                     try:
-                        if int(value) < 0:
+                        if int(value) < -1:
                             raise ValueError()
                     except ValueError:
                         self.logger.error(
                             'Priority definition should be an integer, and should be '
-                            'greater than or equal to zero',
+                            'greater than or equal to -1',
                             extra={'line_number': line_index + 1,
                                    'column_number': col_index + 1,
                                    'cause': value})
@@ -3270,12 +3270,12 @@ class StructuralVariantValidator(CustomNamespacesValidator):
                     'No Entrez gene id or gene symbol provided for site 1 and site 2',
                     extra={'line_number': self.line_number})
         elif site1_gene is None and site2_gene is not None:
-            self.logger.warning(
+            self.logger.info(
                 'No Entrez gene id or gene symbol provided for site 1. '
                 'Assuming either the intragenic, deletion, duplication, translocation or inversion variant',
                 extra={'line_number': self.line_number})
         elif site2_gene is None and site1_gene is not None:
-            self.logger.warning(
+            self.logger.info(
                 'No Entrez gene id or gene symbol provided for site 2. '
                 'Assuming either the intragenic, deletion, duplication, translocation or inversion variant',
                 extra={'line_number': self.line_number})

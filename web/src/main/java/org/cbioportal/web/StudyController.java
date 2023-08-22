@@ -23,6 +23,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -98,9 +99,10 @@ public class StudyController {
         @ApiParam("Name of the property that the result list is sorted by")
         @RequestParam(required = false) StudySortBy sortBy,
         @ApiParam("Direction of the sort")
-        @RequestParam(defaultValue = "ASC") Direction direction,
-        Authentication authentication) {
-        
+        @RequestParam(defaultValue = "ASC") Direction direction)
+        {
+
+        Authentication authentication = null;    
         // Only use this feature on the public portal and make sure it is never used
         // on portals using auth, as in auth setting, different users will have different
         // results.
@@ -114,6 +116,8 @@ public class StudyController {
                 && direction == Direction.ASC) {
             return new ResponseEntity<>(defaultResponse, HttpStatus.OK);
         }
+        else
+            authentication = SecurityContextHolder.getContext().getAuthentication();
 
         if (projection == Projection.META) {
             HttpHeaders responseHeaders = new HttpHeaders();
@@ -185,7 +189,8 @@ public class StudyController {
     @ApiOperation("Get the study tags by IDs")
     public ResponseEntity<List<CancerStudyTags>> getTagsForMultipleStudies(
         @ApiParam(required = true, value = "List of Study IDs")
-        @RequestBody List<String> studyIds) {
+        @RequestBody List<String> studyIds
+    ) {
 
         List<CancerStudyTags> cancerStudyTags = studyService.getTagsForMultipleStudies(studyIds);
 
